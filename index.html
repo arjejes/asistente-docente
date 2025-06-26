@@ -1,0 +1,1128 @@
+import React, { useState, useEffect, useRef } from 'react';
+
+export default function App() {
+  // Estado principal de la aplicación
+  const [activeView, setActiveView] = useState('welcome');
+  const [darkMode, setDarkMode] = useState(false);
+  const [apiKey, setApiKey] = useState(null);
+  const [loading, setLoading] = useState(!localStorage.getItem('apiKey'));
+  const [loadingMessage, setLoadingMessage] = useState('Generando con IA...');
+  const [students, setStudents] = useState([]);
+  const [teacherProfile, setTeacherProfile] = useState({
+    name: '',
+    subject: '',
+    level: '',
+    methodology: '',
+    objectives: '',
+    materials: ''
+  });
+  const [results, setResults] = useState([]);
+  
+  // Estados para formularios específicos
+  const [examFormData, setExamFormData] = useState({
+    image: null,
+    criteria: '',
+    student: '',
+    grade: ''
+  });
+  const [studentName, setStudentName] = useState('');
+  const [selectedStudentForBalance, setSelectedStudentForBalance] = useState('');
+  const [showStudentBalanceModal, setShowStudentBalanceModal] = useState(false);
+
+  // Referencias
+  const chartRef = useRef(null);
+  const chartInstance = useRef(null);
+  const aiOutputRef = useRef(null);
+  
+  // Aplicar tema oscuro al cargar
+  useEffect(() => {
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      setDarkMode(true);
+    }
+    
+    // Cargar API key desde localStorage si existe
+    const savedApiKey = localStorage.getItem('apiKey');
+    if (savedApiKey) {
+      setApiKey(savedApiKey);
+      setLoading(false);
+    }
+  }, []);
+
+  // Funciones auxiliares
+  const showLoading = (message = 'Generando con IA...') => {
+    setLoadingMessage(message);
+    setLoading(true);
+  };
+
+  const hideLoading = () => {
+    setLoading(false);
+  };
+
+  const saveResult = () => {
+    if (aiOutputRef.current && aiOutputRef.current.innerHTML.trim()) {
+      const newResult = {
+        id: Date.now(),
+        content: aiOutputRef.current.innerHTML,
+        timestamp: new Date().toLocaleString()
+      };
+      
+      setResults(prevResults => [...prevResults, newResult]);
+      alert('Resultado guardado exitosamente!');
+    } else {
+      alert('No hay contenido para guardar.');
+    }
+  };
+
+  const exportToPDF = () => {
+    if (!aiOutputRef.current || !aiOutputRef.current.innerHTML.trim()) {
+      alert('No hay contenido para exportar.');
+      return;
+    }
+
+    showLoading('Exportando a PDF...');
+    
+    // Simulamos una función asíncrona para generar el PDF
+    setTimeout(() => {
+      // Aquí normalmente usaríamos jsPDF y html2canvas para generar el PDF
+      console.log('Exporting to PDF:', aiOutputRef.current.innerHTML);
+      alert('PDF generado! (En implementación real se descargaría el archivo)');
+      hideLoading();
+    }, 1500);
+  };
+
+  const generateChart = (grades) => {
+    if (!chartRef.current) return;
+
+    // Limpiar gráfico anterior si existe
+    if (chartInstance.current) {
+      chartInstance.current.destroy();
+    }
+
+    // Procesar datos para el gráfico
+    const ctx = chartRef.current.getContext('2d');
+    
+    // Agrupar calificaciones por rango
+    const gradeRanges = {
+      '0-3': 0,
+      '4-5': 0,
+      '6-7': 0,
+      '8-10': 0
+    };
+    
+    grades.forEach(grade => {
+      const numGrade = parseFloat(grade);
+      if (numGrade >= 0 && numGrade <= 3) gradeRanges['0-3']++;
+      else if (numGrade <= 5) gradeRanges['4-5']++;
+      else if (numGrade <= 7) gradeRanges['6-7']++;
+      else if (numGrade <= 10) gradeRanges['8-10']++;
+    });
+
+    // Crear gráfico
+    chartInstance.current = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: Object.keys(gradeRanges),
+        datasets: [{
+          label: 'Número de estudiantes',
+          data: Object.values(gradeRanges),
+          backgroundColor: [
+            'rgba(239, 68, 68, 0.6)', // Rojo para 0-3
+            'rgba(245, 158, 11, 0.6)', // Amarillo para 4-5
+            'rgba(37, 99, 235, 0.6)', // Azul para 6-7
+            'rgba(34, 197, 94, 0.6)' // Verde para 8-10
+          ],
+          borderColor: [
+            'rgba(239, 68, 68, 1)',
+            'rgba(245, 158, 11, 1)',
+            'rgba(37, 99, 235, 1)',
+            'rgba(34, 197, 94, 1)'
+          ],
+          borderWidth: 1
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              stepSize: 1
+            }
+          }
+        },
+        plugins: {
+          legend: {
+            display: false
+          },
+          title: {
+            display: true,
+            text: 'Distribución de Calificaciones'
+          }
+        }
+      }
+    });
+  };
+
+  const generateMonthlyBalance = () => {
+    if (results.length === 0) {
+      alert('No hay resultados guardados para generar un balance.');
+      return;
+    }
+
+    setActiveView('tracking');
+    
+    // Extraer calificaciones del historial de resultados
+    const grades = results.flatMap(result => {
+      const gradeMatch = result.content.match(/Calificación:\s*(\d+\.?\d?)/gi);
+      return gradeMatch ? gradeMatch.map(match => match.split(':')[1].trim()) : [];
+    });
+
+    // Mostrar resultado en interfaz
+    showAIResult(`
+      <h3 class="text-xl font-bold mb-4">Informe de Balance Mensual</h3>
+      <p>Este informe presenta un análisis del rendimiento académico durante el último mes.</p>
+      
+      <h4 class="font-bold mt-6 mb-2">Resumen Estadístico:</h4>
+      <ul class="list-disc pl-5">
+        <li>Total de evaluaciones: ${grades.length}</li>
+        <li>Promedio general: ${grades.reduce((sum, grade) => sum + parseFloat(grade), 0) / grades.length.toFixed(2)}</li>
+        <li>Calificación más alta: ${Math.max(...grades.map(g => parseFloat(g))).toFixed(2)}</li>
+        <li>Calificación más baja: ${Math.min(...grades.map(g => parseFloat(g))).toFixed(2)}</li>
+      </ul>
+      
+      <h4 class="font-bold mt-6 mb-2">Análisis por Competencias:</h4>
+      <p>Basado en los criterios utilizados en las correcciones, se observa que los estudiantes tienen mayor dificultad en...</p>
+      
+      <h4 class="font-bold mt-6 mb-2">Recomendaciones:</h4>
+      <p>Se recomienda enfocarse en reforzar las siguientes áreas...</p>
+    `);
+    
+    // Generar gráfico si hay calificaciones
+    if (grades.length > 0) {
+      generateChart(grades);
+      document.getElementById('chart-container').classList.remove('hidden');
+    } else {
+      document.getElementById('chart-container').classList.add('hidden');
+    }
+  };
+
+  const generateAnnualBalance = () => {
+    if (results.length === 0) {
+      alert('No hay resultados guardados para generar un balance.');
+      return;
+    }
+
+    setActiveView('tracking');
+    
+    // Extraer calificaciones del historial de resultados
+    const grades = results.flatMap(result => {
+      const gradeMatch = result.content.match(/Calificación:\s*(\d+\.?\d?)/gi);
+      return gradeMatch ? gradeMatch.map(match => match.split(':')[1].trim()) : [];
+    });
+
+    // Mostrar resultado en interfaz
+    showAIResult(`
+      <h3 class="text-xl font-bold mb-4">Informe de Balance Anual</h3>
+      <p>Este informe presenta un análisis completo del rendimiento académico durante el año lectivo.</p>
+      
+      <h4 class="font-bold mt-6 mb-2">Evolución del Rendimiento:</h4>
+      <p>El promedio general de calificaciones ha mostrado una tendencia de mejora del X% a lo largo del año.</p>
+      
+      <h4 class="font-bold mt-6 mb-2">Resumen Estadístico:</h4>
+      <ul class="list-disc pl-5">
+        <li>Total de evaluaciones: ${grades.length}</li>
+        <li>Promedio general: ${grades.reduce((sum, grade) => sum + parseFloat(grade), 0) / grades.length.toFixed(2)}</li>
+        <li>Calificación más alta: ${Math.max(...grades.map(g => parseFloat(g))).toFixed(2)}</li>
+        <li>Calificación más baja: ${Math.min(...grades.map(g => parseFloat(g))).toFixed(2)}</li>
+      </ul>
+      
+      <h4 class="font-bold mt-6 mb-2">Fortalezas y Debilidades:</h4>
+      <p>Según el análisis de todas las evaluaciones realizadas durante el año, los estudiantes han demostrado mayor dominio en...</p>
+      
+      <h4 class="font-bold mt-6 mb-2">Recomendaciones para el Próximo Año:</h4>
+      <p>Para mejorar aún más el desempeño académico, se recomienda implementar estrategias como...</p>
+    `);
+    
+    // Generar gráfico si hay calificaciones
+    if (grades.length > 0) {
+      generateChart(grades);
+      document.getElementById('chart-container').classList.remove('hidden');
+    } else {
+      document.getElementById('chart-container').classList.add('hidden');
+    }
+  };
+
+  const showAIResult = (content) => {
+    aiOutputRef.current.innerHTML = content;
+    document.getElementById('ai-output-container').classList.remove('hidden');
+  };
+
+  const handleSaveApiKey = () => {
+    const apiKeyInput = document.getElementById('apiKeyInput');
+    if (apiKeyInput.value.trim()) {
+      setApiKey(apiKeyInput.value.trim());
+      localStorage.setItem('apiKey', apiKeyInput.value.trim());
+      setLoading(false);
+    } else {
+      alert('Por favor, introduce una API Key válida.');
+    }
+  };
+
+  const handleAddStudent = (e) => {
+    e.preventDefault();
+    if (studentName.trim()) {
+      setStudents([...students, studentName.trim()]);
+      setStudentName('');
+    }
+  };
+
+  const handleDeleteStudent = (index) => {
+    const updatedStudents = [...students];
+    updatedStudents.splice(index, 1);
+    setStudents(updatedStudents);
+  };
+
+  const handleGenerateStudentBalance = () => {
+    if (students.length === 0) {
+      alert('No hay estudiantes registrados para generar un informe.');
+      return;
+    }
+    setShowStudentBalanceModal(true);
+  };
+
+  const handleSubmitStudentBalance = (e) => {
+    e.preventDefault();
+    if (!selectedStudentForBalance) {
+      alert('Por favor, selecciona un estudiante.');
+      return;
+    }
+    
+    setShowStudentBalanceModal(false);
+    
+    // Filtrar calificaciones del estudiante seleccionado
+    const studentGrades = results
+      .filter(result => result.content.includes(`Estudiante: ${selectedStudentForBalance}`))
+      .map(result => {
+        const gradeMatch = result.content.match(/Calificación:\s*(\d+\.?\d?)/);
+        return gradeMatch ? parseFloat(gradeMatch[1]) : null;
+      })
+      .filter(grade => grade !== null);
+
+    if (studentGrades.length === 0) {
+      alert(`No hay calificaciones registradas para ${selectedStudentForBalance}.`);
+      return;
+    }
+
+    // Mostrar resultado en interfaz
+    showAIResult(`
+      <h3 class="text-xl font-bold mb-4">Informe de Progreso Individual - ${selectedStudentForBalance}</h3>
+      <p>Este informe presenta un análisis detallado del progreso académico de ${selectedStudentForBalance} durante el periodo evaluado.</p>
+      
+      <h4 class="font-bold mt-6 mb-2">Resumen de Desempeño:</h4>
+      <ul class="list-disc pl-5">
+        <li>Número total de evaluaciones: ${studentGrades.length}</li>
+        <li>Promedio de calificaciones: ${(studentGrades.reduce((sum, grade) => sum + grade, 0) / studentGrades.length).toFixed(2)}</li>
+        <li>Calificación más alta: ${Math.max(...studentGrades).toFixed(2)}</li>
+        <li>Calificación más baja: ${Math.min(...studentGrades).toFixed(2)}</li>
+      </ul>
+      
+      <h4 class="font-bold mt-6 mb-2">Evolución Académica:</h4>
+      <p>El desempeño de ${selectedStudentForBalance} ha mostrado una tendencia de mejora del X% a lo largo del periodo evaluado.</p>
+      
+      <h4 class="font-bold mt-6 mb-2">Áreas de Fortaleza:</h4>
+      <p>${selectedStudentForBalance} ha demostrado mayor dominio en...</p>
+      
+      <h4 class="font-bold mt-6 mb-2">Recomendaciones Personalizadas:</h4>
+      <p>Para mejorar aún más el desempeño académico de ${selectedStudentForBalance}, se recomienda implementar estrategias como...</p>
+    `);
+    
+    // Generar gráfico
+    generateChart(studentGrades);
+    document.getElementById('chart-container').classList.remove('hidden');
+  };
+
+  const handleExamSubmit = (e) => {
+    e.preventDefault();
+    if (!examFormData.image) {
+      alert('Por favor, selecciona una imagen del examen.');
+      return;
+    }
+    
+    if (!examFormData.criteria) {
+      alert('Por favor, ingresa los criterios de corrección.');
+      return;
+    }
+    
+    if (!examFormData.student) {
+      alert('Por favor, selecciona un estudiante.');
+      return;
+    }
+    
+    if (!examFormData.grade || examFormData.grade < 0 || examFormData.grade > 10) {
+      alert('Por favor, ingresa una calificación válida entre 0 y 10.');
+      return;
+    }
+
+    // Simular proceso de OCR y corrección automática
+    showLoading('Procesando examen...');
+    
+    setTimeout(() => {
+      // Simular resultado de OCR
+      const ocrText = "Respuestas del estudiante: ...";
+      
+      // Mostrar resultado en interfaz
+      showAIResult(`
+        <h3 class="text-xl font-bold mb-4">Corrección Automática del Examen</h3>
+        <p><strong>Estudiante:</strong> ${examFormData.student}</p>
+        <p><strong>Calificación:</strong> ${examFormData.grade}/10</p>
+        
+        <h4 class="font-bold mt-6 mb-2">Texto Reconocido (OCR):</h4>
+        <pre class="bg-gray-100 p-4 rounded-lg overflow-x-auto dark:bg-gray-700">${ocrText}</pre>
+        
+        <h4 class="font-bold mt-6 mb-2">Criterios Evaluados:</h4>
+        <p>${examFormData.criteria}</p>
+        
+        <h4 class="font-bold mt-6 mb-2">Análisis Detallado:</h4>
+        <p>El examen de ${examFormData.student} muestra un buen dominio de los conceptos fundamentales, aunque se observan algunas dificultades en...</p>
+        
+        <h4 class="font-bold mt-6 mb-2">Recomendaciones:</h4>
+        <p>Se recomienda reforzar el estudio de ciertos temas específicos mediante...</p>
+      `);
+      
+      hideLoading();
+    }, 2000);
+  };
+
+  const handleProfileSubmit = (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const profileData = {};
+    
+    formData.forEach((value, key) => {
+      profileData[key] = value;
+    });
+    
+    setTeacherProfile(profileData);
+    alert('Perfil del docente guardado exitosamente!');
+  };
+
+  return (
+    <div className={`flex flex-col h-screen ${darkMode ? 'dark' : ''}`}>
+      {/* Modales */}
+      {!apiKey && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <h2 className="text-2xl font-bold mb-4 text-indigo-600 dark:text-indigo-400">Configuración de API</h2>
+            <p className="mb-6 text-gray-600 dark:text-gray-300">Por favor, introduce tu API Key de Google Gemini para continuar.</p>
+            <input 
+              type="password" 
+              id="apiKeyInput"
+              placeholder="Tu API Key de Gemini"
+              className="w-full p-3 border border-gray-300 rounded-lg mb-4 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+            />
+            <button 
+              onClick={handleSaveApiKey}
+              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-3 rounded-lg font-semibold transition-colors duration-200"
+            >
+              Guardar y Empezar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {loading && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-xl flex flex-col items-center">
+            <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-indigo-500"></div>
+            <p className="mt-4 text-lg font-semibold text-gray-700 dark:text-gray-200">{loadingMessage}</p>
+          </div>
+        </div>
+      )}
+
+      {showStudentBalanceModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <h2 className="text-2xl font-bold mb-4">Balance de Estudiante</h2>
+            <p className="mb-4 text-gray-600 dark:text-gray-300">Selecciona un estudiante para generar su informe de progreso individual.</p>
+            <form onSubmit={handleSubmitStudentBalance} className="space-y-4">
+              <select 
+                value={selectedStudentForBalance}
+                onChange={(e) => setSelectedStudentForBalance(e.target.value)}
+                className="w-full p-3 border border-gray-300 rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                required
+              >
+                <option value="">Selecciona un estudiante</option>
+                {students.map((student, index) => (
+                  <option key={index} value={student}>{student}</option>
+                ))}
+              </select>
+              <div className="flex gap-4 pt-2">
+                <button 
+                  type="button" 
+                  onClick={() => setShowStudentBalanceModal(false)}
+                  className="w-full bg-gray-300 hover:bg-gray-400 dark:bg-gray-600 dark:hover:bg-gray-500 text-gray-800 dark:text-white p-3 rounded-lg font-semibold transition-colors duration-200"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit"
+                  className="w-full bg-sky-500 hover:bg-sky-600 text-white p-3 rounded-lg font-semibold transition-colors duration-200"
+                >
+                  Generar Informe
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Barra lateral */}
+      <aside className="bg-white dark:bg-gray-800 w-64 min-h-full p-4 flex-shrink-0 shadow-lg fixed z-10 md:relative">
+        <div className="flex items-center justify-between mb-8">
+          <h1 className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">Asistente Docente</h1>
+          <button 
+            onClick={() => setDarkMode(!darkMode)}
+            className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors duration-200"
+            aria-label="Cambiar tema"
+          >
+            {darkMode ? (
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-yellow-300">
+                <circle cx="12" cy="12" r="5"/>
+                <line x1="12" y1="1" x2="12" y2="3"/>
+                <line x1="12" y1="21" x2="12" y2="23"/>
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+                <line x1="1" y1="12" x2="3" y2="12"/>
+                <line x1="21" y1="12" x2="23" y2="12"/>
+                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-700">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+              </svg>
+            )}
+          </button>
+        </div>
+        <nav>
+          <ul className="space-y-2">
+            <li>
+              <button 
+                onClick={() => setActiveView('welcome')}
+                className={`w-full text-left px-4 py-3 rounded-lg transition-colors duration-200 ${
+                  activeView === 'welcome' 
+                    ? 'bg-indigo-100 text-indigo-700 dark:bg-gray-700 dark:text-indigo-300' 
+                    : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                Bienvenida
+              </button>
+            </li>
+            <li>
+              <button 
+                onClick={() => setActiveView('profile')}
+                className={`w-full text-left px-4 py-3 rounded-lg transition-colors duration-200 ${
+                  activeView === 'profile' 
+                    ? 'bg-indigo-100 text-indigo-700 dark:bg-gray-700 dark:text-indigo-300' 
+                    : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                Perfil del Docente
+              </button>
+            </li>
+            <li>
+              <button 
+                onClick={() => setActiveView('planning')}
+                className={`w-full text-left px-4 py-3 rounded-lg transition-colors duration-200 ${
+                  activeView === 'planning' 
+                    ? 'bg-indigo-100 text-indigo-700 dark:bg-gray-700 dark:text-indigo-300' 
+                    : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                Planificaciones
+              </button>
+            </li>
+            <li>
+              <button 
+                onClick={() => setActiveView('exams')}
+                className={`w-full text-left px-4 py-3 rounded-lg transition-colors duration-200 ${
+                  activeView === 'exams' 
+                    ? 'bg-indigo-100 text-indigo-700 dark:bg-gray-700 dark:text-indigo-300' 
+                    : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                Generación de Exámenes
+              </button>
+            </li>
+            <li>
+              <button 
+                onClick={() => setActiveView('correction')}
+                className={`w-full text-left px-4 py-3 rounded-lg transition-colors duration-200 ${
+                  activeView === 'correction' 
+                    ? 'bg-indigo-100 text-indigo-700 dark:bg-gray-700 dark:text-indigo-300' 
+                    : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                Corrección Automática
+              </button>
+            </li>
+            <li>
+              <button 
+                onClick={() => setActiveView('students')}
+                className={`w-full text-left px-4 py-3 rounded-lg transition-colors duration-200 ${
+                  activeView === 'students' 
+                    ? 'bg-indigo-100 text-indigo-700 dark:bg-gray-700 dark:text-indigo-300' 
+                    : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                Gestión de Estudiantes
+              </button>
+            </li>
+            <li>
+              <button 
+                onClick={() => setActiveView('tracking')}
+                className={`w-full text-left px-4 py-3 rounded-lg transition-colors duration-200 ${
+                  activeView === 'tracking' 
+                    ? 'bg-indigo-100 text-indigo-700 dark:bg-gray-700 dark:text-indigo-300' 
+                    : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`}
+              >
+                Balance y Seguimiento
+              </button>
+            </li>
+          </ul>
+        </nav>
+      </aside>
+
+      {/* Contenido principal */}
+      <main className="flex-1 p-4 md:p-8 overflow-y-auto md:ml-64">
+        {/* Vista: Bienvenida */}
+        {activeView === 'welcome' && (
+          <div className="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-lg text-center animate-fadeIn">
+            <h2 className="text-4xl font-bold text-indigo-600 dark:text-indigo-400 mb-4">¡Bienvenido/a Profesor/a!</h2>
+            <p className="text-lg text-gray-600 dark:text-gray-300 max-w-3xl mx-auto">
+              Estoy aquí para ayudarte a dar lo mejor de ti y cambiar la vida de tus alumnos con tus enseñanzas. 
+              Juntos haremos que cada clase sea una oportunidad de crecimiento 📚✨
+            </p>
+            
+            <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="bg-gray-50 dark:bg-gray-700 p-6 rounded-lg shadow-sm">
+                <div className="w-12 h-12 bg-indigo-100 dark:bg-indigo-900 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-600 dark:text-indigo-300">
+                    <path d="M12 20v-6"/>
+                    <path d="M18 20V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16"/>
+                    <path d="M12 12v-2"/>
+                    <path d="M12 2v2"/>
+                    <path d="M6 20v-2"/>
+                    <path d="M18 20v-2"/>
+                    <path d="M12 6H8"/>
+                    <path d="M12 10H8"/>
+                    <path d="M16 10h-2"/>
+                    <path d="M16 14h-4"/>
+                    <path d="M12 18h-4"/>
+                  </svg>
+                </div>
+                <h3 className="text-xl font-bold mb-2">Organización</h3>
+                <p className="text-gray-600 dark:text-gray-300">Planifica tus clases, crea exámenes y organiza tu trabajo docente de manera eficiente.</p>
+              </div>
+              
+              <div className="bg-gray-50 dark:bg-gray-700 p-6 rounded-lg shadow-sm">
+                <div className="w-12 h-12 bg-indigo-100 dark:bg-indigo-900 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-600 dark:text-indigo-300">
+                    <path d="M12 20v-6"/>
+                    <path d="M18 20V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16"/>
+                    <path d="M12 12v-2"/>
+                    <path d="M12 2v2"/>
+                    <path d="M6 20v-2"/>
+                    <path d="M18 20v-2"/>
+                    <path d="M12 6H8"/>
+                    <path d="M12 10H8"/>
+                    <path d="M16 10h-2"/>
+                    <path d="M16 14h-4"/>
+                    <path d="M12 18h-4"/>
+                  </svg>
+                </div>
+                <h3 className="text-xl font-bold mb-2">Inteligencia Artificial</h3>
+                <p className="text-gray-600 dark:text-gray-300">Utiliza la potencia de la IA para crear contenidos educativos, corregir exámenes y analizar el progreso de tus estudiantes.</p>
+              </div>
+              
+              <div className="bg-gray-50 dark:bg-gray-700 p-6 rounded-lg shadow-sm">
+                <div className="w-12 h-12 bg-indigo-100 dark:bg-indigo-900 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-600 dark:text-indigo-300">
+                    <path d="M12 20v-6"/>
+                    <path d="M18 20V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16"/>
+                    <path d="M12 12v-2"/>
+                    <path d="M12 2v2"/>
+                    <path d="M6 20v-2"/>
+                    <path d="M18 20v-2"/>
+                    <path d="M12 6H8"/>
+                    <path d="M12 10H8"/>
+                    <path d="M16 10h-2"/>
+                    <path d="M16 14h-4"/>
+                    <path d="M12 18h-4"/>
+                  </svg>
+                </div>
+                <h3 className="text-xl font-bold mb-2">Seguimiento</h3>
+                <p className="text-gray-600 dark:text-gray-300">Analiza el progreso de tus estudiantes con informes personalizados y gráficos de rendimiento.</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Vista: Perfil del Docente */}
+        {activeView === 'profile' && (
+          <div className="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-lg animate-fadeIn">
+            <h2 className="text-2xl font-bold mb-6">Perfil del Docente</h2>
+            <form onSubmit={handleProfileSubmit} className="space-y-4">
+              <div>
+                <label htmlFor="teacherName" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Nombre completo</label>
+                <input 
+                  type="text" 
+                  id="teacherName" 
+                  name="name"
+                  placeholder="Nombre completo" 
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label htmlFor="subject" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Materia/asignatura</label>
+                <input 
+                  type="text" 
+                  id="subject" 
+                  name="subject"
+                  placeholder="Materia/asignatura" 
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label htmlFor="level" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Nivel</label>
+                <select 
+                  id="level" 
+                  name="level"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  required
+                >
+                  <option value="">Selecciona Nivel</option>
+                  <option value="primaria">Primaria</option>
+                  <option value="secundaria">Secundaria</option>
+                  <option value="universidad">Universidad</option>
+                </select>
+              </div>
+              
+              <div>
+                <label htmlFor="methodology" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Metodología preferida</label>
+                <textarea 
+                  id="methodology" 
+                  name="methodology"
+                  placeholder="Metodología preferida" 
+                  rows="3"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                ></textarea>
+              </div>
+              
+              <div>
+                <label htmlFor="objectives" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Objetivos de aprendizaje generales</label>
+                <textarea 
+                  id="objectives" 
+                  name="objectives"
+                  placeholder="Objetivos de aprendizaje generales" 
+                  rows="3"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                ></textarea>
+              </div>
+              
+              <div>
+                <label htmlFor="materials" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Material de referencia</label>
+                <textarea 
+                  id="materials" 
+                  name="materials"
+                  placeholder="Material de referencia" 
+                  rows="3"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                ></textarea>
+              </div>
+              
+              <button 
+                type="submit"
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-3 rounded-lg font-semibold transition-colors duration-200"
+              >
+                Guardar Perfil
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* Vista: Planificaciones */}
+        {activeView === 'planning' && (
+          <div className="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-lg animate-fadeIn">
+            <h2 className="text-3xl font-bold mb-6">Módulo de Planificaciones</h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="bg-gray-50 dark:bg-gray-700 p-6 rounded-lg shadow-sm">
+                <h3 className="text-xl font-bold mb-2">📅 Planificación Semanal</h3>
+                <p className="text-gray-600 dark:text-gray-300 mb-4">Organiza tus clases diarias y actividades semanales de forma visual y sencilla.</p>
+                <button className="w-full bg-indigo-500 hover:bg-indigo-600 text-white p-2 rounded transition-colors duration-200">
+                  Crear Planificación Semanal
+                </button>
+              </div>
+              
+              <div className="bg-gray-50 dark:bg-gray-700 p-6 rounded-lg shadow-sm">
+                <h3 className="text-xl font-bold mb-2">📘 Planificación Mensual</h3>
+                <p className="text-gray-600 dark:text-gray-300 mb-4">Define objetivos mensuales y distribuye los contenidos programáticos de forma eficiente.</p>
+                <button className="w-full bg-indigo-500 hover:bg-indigo-600 text-white p-2 rounded transition-colors duration-200">
+                  Crear Planificación Mensual
+                </button>
+              </div>
+              
+              <div className="bg-gray-50 dark:bg-gray-700 p-6 rounded-lg shadow-sm">
+                <h3 className="text-xl font-bold mb-2">📚 Planificación Anual</h3>
+                <p className="text-gray-600 dark:text-gray-300 mb-4">Organiza todo el curso escolar con anticipación, estableciendo metas claras y alcanzables.</p>
+                <button className="w-full bg-indigo-500 hover:bg-indigo-600 text-white p-2 rounded transition-colors duration-200">
+                  Crear Planificación Anual
+                </button>
+              </div>
+            </div>
+            
+            <div className="mt-8">
+              <h3 className="text-xl font-bold mb-4">Historial de Planificaciones</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-gray-100 dark:bg-gray-700">
+                    <tr>
+                      <th className="p-3">Fecha</th>
+                      <th className="p-3">Tipo</th>
+                      <th className="p-3">Tema</th>
+                      <th className="p-3">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b dark:border-gray-700">
+                      <td className="p-3">2023-09-15</td>
+                      <td className="p-3">Semanal</td>
+                      <td className="p-3">Matemáticas Básicas</td>
+                      <td className="p-3">
+                        <button className="text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 mr-2">Ver</button>
+                        <button className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300">Eliminar</button>
+                      </td>
+                    </tr>
+                    <tr className="border-b dark:border-gray-700">
+                      <td className="p-3">2023-09-01</td>
+                      <td className="p-3">Mensual</td>
+                      <td className="p-3">Ciencias Naturales</td>
+                      <td className="p-3">
+                        <button className="text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 mr-2">Ver</button>
+                        <button className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300">Eliminar</button>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="p-3">2023-08-01</td>
+                      <td className="p-3">Anual</td>
+                      <td className="p-3">Programa Escolar 2023-2024</td>
+                      <td className="p-3">
+                        <button className="text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 mr-2">Ver</button>
+                        <button className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300">Eliminar</button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Vista: Generación de Exámenes */}
+        {activeView === 'exams' && (
+          <div className="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-lg animate-fadeIn">
+            <h2 className="text-3xl font-bold mb-6">Módulo de Generación de Exámenes</h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-gray-50 dark:bg-gray-700 p-6 rounded-lg shadow-sm">
+                <h3 className="text-xl font-bold mb-2">📝 Exámenes Tradicionales</h3>
+                <p className="text-gray-600 dark:text-gray-300 mb-4">Crea exámenes con preguntas de opción múltiple, verdadero/falso, desarrollo y más.</p>
+                <button className="w-full bg-indigo-500 hover:bg-indigo-600 text-white p-2 rounded transition-colors duration-200">
+                  Generar Examen Tradicional
+                </button>
+              </div>
+              
+              <div className="bg-gray-50 dark:bg-gray-700 p-6 rounded-lg shadow-sm">
+                <h3 className="text-xl font-bold mb-2">🧠 Exámenes Basados en Competencias</h3>
+                <p className="text-gray-600 dark:text-gray-300 mb-4">Evalúa competencias específicas con preguntas adaptadas a los estándares curriculares.</p>
+                <button className="w-full bg-indigo-500 hover:bg-indigo-600 text-white p-2 rounded transition-colors duration-200">
+                  Generar Examen por Competencias
+                </button>
+              </div>
+            </div>
+            
+            <div className="mt-8">
+              <h3 className="text-xl font-bold mb-4">Exámenes Generados</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-gray-100 dark:bg-gray-700">
+                    <tr>
+                      <th className="p-3">Fecha</th>
+                      <th className="p-3">Tipo</th>
+                      <th className="p-3">Tema</th>
+                      <th className="p-3">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b dark:border-gray-700">
+                      <td className="p-3">2023-09-15</td>
+                      <td className="p-3">Tradicional</td>
+                      <td className="p-3">Matemáticas Básicas</td>
+                      <td className="p-3">
+                        <button className="text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 mr-2">Ver</button>
+                        <button className="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 mr-2">Editar</button>
+                        <button className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300">Eliminar</button>
+                      </td>
+                    </tr>
+                    <tr className="border-b dark:border-gray-700">
+                      <td className="p-3">2023-09-01</td>
+                      <td className="p-3">Competencias</td>
+                      <td className="p-3">Ciencias Naturales</td>
+                      <td className="p-3">
+                        <button className="text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 mr-2">Ver</button>
+                        <button className="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 mr-2">Editar</button>
+                        <button className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300">Eliminar</button>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="p-3">2023-08-20</td>
+                      <td className="p-3">Tradicional</td>
+                      <td className="p-3">Lenguaje y Comunicación</td>
+                      <td className="p-3">
+                        <button className="text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 mr-2">Ver</button>
+                        <button className="text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 mr-2">Editar</button>
+                        <button className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300">Eliminar</button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Vista: Corrección Automática */}
+        {activeView === 'correction' && (
+          <div className="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-lg animate-fadeIn">
+            <h2 className="text-3xl font-bold mb-6">Módulo de Corrección Automática</h2>
+            
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg">
+              <h3 className="font-bold text-xl mb-4">📷 Subir Examen para Corrección (OCR)</h3>
+              <form onSubmit={handleExamSubmit} className="space-y-4">
+                <div>
+                  <label htmlFor="examImage" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Imagen del examen</label>
+                  <input 
+                    type="file" 
+                    name="examImage"
+                    accept="image/*"
+                    onChange={(e) => setExamFormData({...examFormData, image: e.target.files[0]})}
+                    className="w-full p-2 border border-gray-300 rounded file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label htmlFor="correctionCriteria" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Criterios de corrección o respuestas modelo</label>
+                  <textarea 
+                    name="correctionCriteria"
+                    id="correctionCriteria"
+                    placeholder="Criterios de corrección o respuestas modelo"
+                    value={examFormData.criteria}
+                    onChange={(e) => setExamFormData({...examFormData, criteria: e.target.value})}
+                    rows="4"
+                    className="w-full p-2 border border-gray-300 rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    required
+                  ></textarea>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="student-select-for-correction" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Seleccionar Estudiante</label>
+                    <select 
+                      name="studentName"
+                      id="student-select-for-correction"
+                      value={examFormData.student}
+                      onChange={(e) => setExamFormData({...examFormData, student: e.target.value})}
+                      className="w-full p-2 border border-gray-300 rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                      required
+                    >
+                      <option value="">Seleccionar Estudiante</option>
+                      {students.map((student, index) => (
+                        <option key={index} value={student}>{student}</option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label htmlFor="grade" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Calificación (0-10)</label>
+                    <input 
+                      type="number" 
+                      name="grade"
+                      id="grade"
+                      placeholder="Calificación (0-10)"
+                      min="0"
+                      max="10"
+                      step="0.1"
+                      value={examFormData.grade}
+                      onChange={(e) => setExamFormData({...examFormData, grade: e.target.value})}
+                      className="w-full p-2 border border-gray-300 rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                      required
+                    />
+                  </div>
+                </div>
+                
+                <button 
+                  type="submit"
+                  className="w-full bg-orange-500 hover:bg-orange-600 text-white p-2 rounded transition-colors duration-200"
+                >
+                  Corregir y Guardar Calificación
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Vista: Gestión de Estudiantes */}
+        {activeView === 'students' && (
+          <div className="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-lg animate-fadeIn">
+            <h2 className="text-3xl font-bold mb-6">Gestión de Estudiantes</h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="md:col-span-1 bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg">
+                <h3 className="font-bold text-xl mb-4">Añadir Estudiante</h3>
+                <form onSubmit={handleAddStudent} className="space-y-3">
+                  <input 
+                    type="text" 
+                    value={studentName}
+                    onChange={(e) => setStudentName(e.target.value)}
+                    placeholder="Nombre completo del estudiante" 
+                    className="w-full p-2 border border-gray-300 rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    required
+                  />
+                  <button 
+                    type="submit"
+                    className="w-full bg-green-500 hover:bg-green-600 text-white p-2 rounded transition-colors duration-200"
+                  >
+                    Añadir Estudiante
+                  </button>
+                </form>
+              </div>
+              
+              <div className="md:col-span-2 bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg">
+                <h3 className="font-bold text-xl mb-4">Lista de Estudiantes</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="border-b dark:border-gray-700">
+                        <th className="p-2">Nombre</th>
+                        <th className="p-2 text-right">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {students.length === 0 ? (
+                        <tr>
+                          <td colSpan="2" className="p-4 text-center text-gray-500 dark:text-gray-400">
+                            No hay estudiantes registrados. Usa el formulario de la izquierda para añadir nuevos estudiantes.
+                          </td>
+                        </tr>
+                      ) : (
+                        students.map((student, index) => (
+                          <tr key={index} className="border-b dark:border-gray-700">
+                            <td className="p-2">{student}</td>
+                            <td className="p-2 text-right">
+                              <button 
+                                onClick={() => handleDeleteStudent(index)}
+                                className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                              >
+                                Eliminar
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Vista: Balance y Seguimiento */}
+        {activeView === 'tracking' && (
+          <div className="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-lg animate-fadeIn">
+            <h2 className="text-3xl font-bold mb-6">Módulo de Balance y Seguimiento</h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg text-center flex flex-col justify-between">
+                <h3 className="font-bold text-xl mb-2">📈 Balance Mensual</h3>
+                <p className="text-sm text-gray-500 mb-4 flex-grow">Analiza el rendimiento del último mes y visualiza los datos en un gráfico.</p>
+                <button 
+                  onClick={generateMonthlyBalance}
+                  className="w-full bg-sky-500 hover:bg-sky-600 text-white p-2 rounded transition-colors duration-200"
+                >
+                  Generar Balance
+                </button>
+              </div>
+              
+              <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg text-center flex flex-col justify-between">
+                <h3 className="font-bold text-xl mb-2">🎯 Balance Anual</h3>
+                <p className="text-sm text-gray-500 mb-4 flex-grow">Obtén un informe completo del año lectivo con gráficos de rendimiento.</p>
+                <button 
+                  onClick={generateAnnualBalance}
+                  className="w-full bg-sky-500 hover:bg-sky-600 text-white p-2 rounded transition-colors duration-200"
+                >
+                  Generar Balance
+                </button>
+              </div>
+              
+              <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg text-center flex flex-col justify-between">
+                <h3 className="font-bold text-xl mb-2">👨‍🎓 Balance por Estudiante</h3>
+                <p className="text-sm text-gray-500 mb-4 flex-grow">Selecciona un estudiante y obtén un informe detallado de su progreso.</p>
+                <button 
+                  onClick={handleGenerateStudentBalance}
+                  className="w-full bg-sky-500 hover:bg-sky-600 text-white p-2 rounded transition-colors duration-200"
+                >
+                  Generar Balance Individual
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Resultado de la IA */}
+        <div id="ai-output-container" className="mt-8 bg-white dark:bg-gray-800 p-8 rounded-xl shadow-lg hidden">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-2xl font-bold">Resultado Generado</h2>
+            <div>
+              <button 
+                onClick={exportToPDF}
+                className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-colors duration-200 mr-2"
+              >
+                Exportar a PDF
+              </button>
+              <button 
+                onClick={saveResult}
+                className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition-colors duration-200"
+              >
+                Guardar Resultado
+              </button>
+            </div>
+          </div>
+          <div ref={aiOutputRef} id="ai-output" className="prose max-w-none dark:prose-invert"></div>
+          
+          <div id="chart-container" className="mt-8 hidden">
+            <h3 className="text-xl font-bold mb-4">Visualización de Datos</h3>
+            <canvas ref={chartRef} id="balance-chart" width="400" height="200"></canvas>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
